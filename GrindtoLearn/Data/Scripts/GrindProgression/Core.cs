@@ -41,7 +41,7 @@ namespace Phoera.GringProgression
         /*  Unlock All Players <SteamID, TRUE>  */
         Dictionary<ulong, bool> unlockAllPlayers = new Dictionary<ulong, bool>();
 
-        public static Dictionary<long, HashSet<MyDefinitionId>> playersData = new Dictionary<long, HashSet<MyDefinitionId>>();
+        public static Dictionary<long, PlayerData> players = new Dictionary<long, PlayerData>();
 
         private MessageEventCaller<long> PlayerInit;
         private bool isInitialized = false;
@@ -402,32 +402,46 @@ namespace Phoera.GringProgression
                     using (var sw =
                       MyAPIGateway.Utilities.ReadFileInWorldStorage(string.Format(Settings.playerFile, playerID), typeof(Core)))
                     {
-                        var ids = MyAPIGateway.Utilities.SerializeFromXML<List<SerializableDefinitionId>>(sw.ReadToEnd());
-                        playerIds = new HashSet<MyDefinitionId>(ids.Select(s => (MyDefinitionId)s), MyDefinitionId.Comparer);
+                        PlayerFile ids = MyAPIGateway.Utilities.SerializeFromXML<PlayerFile>(sw.ReadToEnd());
+                        playerData = new PlayerData().Load(ids);
                     }
                 }
                 catch (Exception e)
                 {
-                    MyLog.Default.WriteLine($"PlayerJoinedRead: {e.Message}");
-                    MyLog.Default.WriteLine($"PlayerJoinedRead: {e.HResult}");
+                    try
+                    {
+                        using (var sw =
+                        MyAPIGateway.Utilities.ReadFileInWorldStorage(string.Format(Settings.playerFile, playerID), typeof(Core)))
+                        {
+                            var ids = MyAPIGateway.Utilities.SerializeFromXML<List<SerializableDefinitionId>>(sw.ReadToEnd());
+                            playerIds = new HashSet<MyDefinitionId>(ids.Select(s => (MyDefinitionId)s), MyDefinitionId.Comparer);
+                            playerData = new PlayerData(playerIds);
+                        }
+                        
+                    }
+                    catch (Exception e1)
+                    {
+                        MyLog.Default.WriteLine($"PlayerJoinedRead: {e1.Message}");
+                        MyLog.Default.WriteLine($"PlayerJoinedRead: {e1.HResult}");
 
-                    MyLog.Default.Flush();
+                        MyLog.Default.Flush();
+                    }
                 }
 
-                if (playerIds == null)
-                    playerIds = new HashSet<MyDefinitionId>(MyDefinitionId.Comparer);
-                if (playerIds.Count == 0)
+                if (playerData == null)
+                    playerData = new PlayerData();
+                if (playerData.LearnedBocks.Count == 0)
                 {
                     MyVisualScriptLogicProvider.ClearAllToolbarSlots(playerID);
                 }
 
                 foreach (var id in settings.AlwaysUnlocked)
                 {
-                    playerIds.Add(id);
+                    playerData.LearnedBocks.Add(id);
                 }
 
-                playersData[playerID] = playerIds;
-                foreach (var id in playerIds.ToList())
+                players[playerID] = playerData;
+                foreach (var id in playerData.LearnedBocks.ToList())
                 {
                     UnlockById(id, playerID, true);
                 }
@@ -442,12 +456,12 @@ namespace Phoera.GringProgression
             MyLog.Default.Flush();
         }
 
-        void UnlockById(MyDefinitionId blockId, long player, bool force = false)
+        void UnlockById(MyDefinitionId blockId, long playerID, bool force = false)
         {
             try
             {
-                var playerData = playersData[player];
-                if (!force && playerData.Contains(blockId))
+                PlayerData playerData = players[playerID];
+                if (!force && playerData.LearnedBocks.Contains(blockId))
                 {
                     return;
                 }
@@ -461,7 +475,7 @@ namespace Phoera.GringProgression
 
                 try
                 {
-                    if (!force && userIds.TryGetValue(player, out steamId))
+                    if (!force && userIds.TryGetValue(playerID, out steamId))
                     {
                         var lockedBlock = new SerializableDefinitionId();
                         if (settings.AlwaysLocked.TryGetValue(blockId, out lockedBlock))
@@ -506,8 +520,8 @@ namespace Phoera.GringProgression
 
                 foreach (var id in ids)
                 {
-                    playerData.Add(id);
-                    MyVisualScriptLogicProvider.PlayerResearchUnlock(player, id);
+                    playerData.LearnedBocks.Add(id);
+                    MyVisualScriptLogicProvider.PlayerResearchUnlock(playerID, id);
                 }
 
             }
