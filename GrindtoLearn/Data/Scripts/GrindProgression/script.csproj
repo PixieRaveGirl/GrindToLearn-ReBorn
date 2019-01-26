@@ -119,6 +119,7 @@
     <Compile Include="CoreBase.cs" />
     <Compile Include="Hasher.cs" />
     <Compile Include="NetworkHandlerSystem.cs" />
+    <Compile Include="PlayerData.cs" />
     <Compile Include="Rnd.cs" />
     <Compile Include="ReplicationSystem.cs" />
   </ItemGroup>

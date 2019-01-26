@@ -32,6 +32,7 @@ namespace Phoera.GringProgression
     {
         NetworkHandlerSystem nhs = new NetworkHandlerSystem(3);
         Settings settings = new Settings();
+        PlayerData playerData = new PlayerData();
 
         Dictionary<MyDefinitionId, HashSet<MyDefinitionId>> variantGroups =
           new Dictionary<MyDefinitionId, HashSet<MyDefinitionId>>(MyDefinitionId.Comparer);
@@ -77,7 +78,7 @@ namespace Phoera.GringProgression
                 /* LOAD World Settings */
                 try
                 {
-                    using (var sw = MyAPIGateway.Utilities.ReadFileInWorldStorage(settings.configFile, typeof(Core)))
+                    using (var sw = MyAPIGateway.Utilities.ReadFileInWorldStorage(Settings.configFile, typeof(Core)))
                         settings.Load(MyAPIGateway.Utilities.SerializeFromXML<SettingsFile>(sw.ReadToEnd()));
                 }
                 catch (Exception e)
@@ -92,7 +93,7 @@ namespace Phoera.GringProgression
                         SettingsFile possibleOldSettings = new SettingsFile();
                         try
                         {
-                            using (var sw = MyAPIGateway.Utilities.ReadFileInWorldStorage(settings.configFile, typeof(Core)))
+                            using (var sw = MyAPIGateway.Utilities.ReadFileInWorldStorage(Settings.configFile, typeof(Core)))
                                 possibleOldSettings = (SettingsFile)MyAPIGateway.Utilities.SerializeFromXML<Settings>(sw.ReadToEnd());
 
                             using (var sw = MyAPIGateway.Utilities.WriteFileInWorldStorage("config.xml.old", typeof(Core)))
@@ -100,7 +101,6 @@ namespace Phoera.GringProgression
                             /* Create Defaults then Load and Save Old Settings file */
                             settings = settings.CreateDefaults();
                             settings.Load(possibleOldSettings);
-                            settings.Save(true);
                             MyLog.Default.WriteLine("Successfully Loaded Old World Settings:");
 
                         }
@@ -116,7 +116,7 @@ namespace Phoera.GringProgression
                 }
 
                 /* Save after loading to add new default settings just incase we added more */
-                settings.Save();
+                settings.SaveSettings(true);
 
                 try
                 {
@@ -369,7 +369,8 @@ namespace Phoera.GringProgression
         {
             if (Initialized)
             {
-                settings.Save();
+                settings.SaveSettings();
+                playerData.SavePlayers();
             }
         }
 
@@ -399,7 +400,7 @@ namespace Phoera.GringProgression
                 try
                 {
                     using (var sw =
-                      MyAPIGateway.Utilities.ReadFileInWorldStorage(string.Format(settings.playerFile, playerID), typeof(Core)))
+                      MyAPIGateway.Utilities.ReadFileInWorldStorage(string.Format(Settings.playerFile, playerID), typeof(Core)))
                     {
                         var ids = MyAPIGateway.Utilities.SerializeFromXML<List<SerializableDefinitionId>>(sw.ReadToEnd());
                         playerIds = new HashSet<MyDefinitionId>(ids.Select(s => (MyDefinitionId)s), MyDefinitionId.Comparer);
@@ -565,8 +566,8 @@ namespace Phoera.GringProgression
         public HashSet<SerializableDefinitionId> AlwaysUnlocked { get; set; } = new HashSet<SerializableDefinitionId>();
         public HashSet<SerializableDefinitionId> AlwaysLocked { get; set; } = new HashSet<SerializableDefinitionId>();
 
-        public string configFile = "config.xml";
-        public string playerFile = "{0}.xml";
+        public const string configFile = "config.xml";
+        public const string playerFile = "{0}.xml";
 
         public bool isDirty
         {
@@ -644,59 +645,29 @@ namespace Phoera.GringProgression
                 return null;
             }
         }
-        public void Save(bool force = false)
+        public void SaveSettings(bool force = false)
         {
             if (this._isDirty || force)
             {
-                this.SaveSettings();
+                SettingsFile cloneSettings = new SettingsFile();
+
+                cloneSettings.AdminUnlockAll = this.AdminUnlockAll;
+                cloneSettings.UseLearnFaction = this.UseLearnFaction;
+                cloneSettings.UseLearnRadius = this.UseLearnRadius;
+                cloneSettings.LearnRadius = this.LearnRadius;
+                cloneSettings.AlwaysUnlocked = this.AlwaysUnlocked;
+                cloneSettings.AlwaysLocked = this.AlwaysLocked;
+
+                MyLog.Default.WriteLine("Saving Settings...");
+                MyLog.Default.Flush();
+
+                using (var sw = MyAPIGateway.Utilities.WriteFileInWorldStorage(configFile, typeof(Core)))
+                    sw.Write(MyAPIGateway.Utilities.SerializeToXML((SettingsFile)cloneSettings));
+                this._isDirty = false;
+
+                MyLog.Default.WriteLine("Settings Saved!");
+                MyLog.Default.Flush();
             }
-
-            this.SavePlayers();
-
-        }
-        public void SaveSettings()
-        {
-            SettingsFile cloneSettings = new SettingsFile();
-
-            cloneSettings.AdminUnlockAll = this.AdminUnlockAll;
-            cloneSettings.UseLearnFaction = this.UseLearnFaction;
-            cloneSettings.UseLearnRadius = this.UseLearnRadius;
-            cloneSettings.LearnRadius = this.LearnRadius;
-            cloneSettings.AlwaysUnlocked = this.AlwaysUnlocked;
-            cloneSettings.AlwaysLocked = this.AlwaysLocked;
-
-            MyLog.Default.WriteLine("Saving Settings...");
-            MyLog.Default.Flush();
-
-            using (var sw = MyAPIGateway.Utilities.WriteFileInWorldStorage(configFile, typeof(Core)))
-                sw.Write(MyAPIGateway.Utilities.SerializeToXML((SettingsFile)cloneSettings));
-            this._isDirty = false;
-
-            MyLog.Default.WriteLine("Settings Saved!");
-            MyLog.Default.Flush();
-        }
-
-        public void SavePlayers()
-        {
-            MyLog.Default.WriteLine("Saving Players...");
-            MyLog.Default.Flush();
-            foreach (var player in Core.playersData)
-            {
-                try
-                {
-                    using (var sw =
-                      MyAPIGateway.Utilities.WriteFileInWorldStorage(string.Format(playerFile, player.Key), typeof(Core)))
-                        sw.Write(MyAPIGateway.Utilities.SerializeToXML(player.Value.Select(s => (SerializableDefinitionId)s)
-                          .ToList()));
-
-                    MyLog.Default.WriteLine($"Player {player.Key} Saved!");
-                }
-                catch (Exception e)
-                {
-                    MyLog.Default.WriteLine($"ERROR SaveData: {e.Message}");
-                }
-            }
-            MyLog.Default.Flush();
         }
 
         public static explicit operator Settings(SettingsFile v)
