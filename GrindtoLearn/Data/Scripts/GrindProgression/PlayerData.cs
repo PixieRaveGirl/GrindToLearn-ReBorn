@@ -50,8 +50,6 @@ namespace Phoera.GringProgression
 
         public void SavePlayers()
         {
-            
-
             MyLog.Default.WriteLine("Saving Players...");
             MyLog.Default.Flush();
             foreach (var player in Core.players)

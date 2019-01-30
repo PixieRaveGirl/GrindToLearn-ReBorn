@@ -37,6 +37,8 @@ namespace Phoera.GringProgression
         Dictionary<MyDefinitionId, HashSet<MyDefinitionId>> variantGroups =
           new Dictionary<MyDefinitionId, HashSet<MyDefinitionId>>(MyDefinitionId.Comparer);
 
+        Progression progress = new Progression();
+
         Dictionary<long, ulong> userIds = new Dictionary<long, ulong>();
         /*  Unlock All Players <SteamID, TRUE>  */
         Dictionary<ulong, bool> unlockAllPlayers = new Dictionary<ulong, bool>();
@@ -46,7 +48,7 @@ namespace Phoera.GringProgression
         private MessageEventCaller<long> PlayerInit;
         private bool isInitialized = false;
 
-        public MessageEventCaller<MyDefinitionId,bool> SendUnlockNotification { get; private set; }
+        public MessageEventCaller<MyDefinitionId,string,string> SendUnlockNotification { get; private set; }
 
         public override void Deinitialize()
         {
@@ -152,7 +154,7 @@ namespace Phoera.GringProgression
             try
             {
                 PlayerInit = nhs.Create<long>(null, PlayerJoined, EventOptions.OnlyToServer);
-                SendUnlockNotification = nhs.Create<MyDefinitionId, bool>(LearnedById, null, EventOptions.OnlyToTarget);
+                SendUnlockNotification = nhs.Create<MyDefinitionId, string, string>(LearnedById, null, EventOptions.OnlyToTarget);
             }
             catch (Exception e)
             {
@@ -205,20 +207,13 @@ namespace Phoera.GringProgression
             return true;
         }
 
-        void LearnedById(MyDefinitionId id, bool success, ulong sender)
+        void LearnedById(MyDefinitionId id, string color, string msg, ulong sender)
         {
             try
             {
-                if (success)
-                {
-                    //MyAPIGateway.Utilities.ShowMessage("SpaceMaster", $"You can now build {MyDefinitionManager.Static.GetCubeBlockDefinition(id).DisplayNameText}.");
-                    MyAPIGateway.Utilities.ShowNotification(
-                      $"You can now build {MyDefinitionManager.Static.GetCubeBlockDefinition(id).DisplayNameText}.");
-                } else
-                {
-                    MyAPIGateway.Utilities.ShowNotification(
-                      $"{MyDefinitionManager.Static.GetCubeBlockDefinition(id).DisplayNameText} technology is out of your reach.",6000,"Red");
-                }
+                //MyAPIGateway.Utilities.ShowMessage("SpaceMaster", $"You can now build {MyDefinitionManager.Static.GetCubeBlockDefinition(id).DisplayNameText}.");
+                MyAPIGateway.Utilities.ShowNotification(
+                 $"{msg}",6000, color);
             }
             catch (Exception e)
             {
@@ -361,7 +356,7 @@ namespace Phoera.GringProgression
             }
             catch (Exception e)
             {
-                MyLog.Default.WriteLine($"Failed to Getting All Blocks: {e.Message}");
+                MyLog.Default.WriteLine($"Failed to All Blocks: {e.Message}");
             }
         }
 
@@ -458,43 +453,55 @@ namespace Phoera.GringProgression
 
         void UnlockById(MyDefinitionId blockId, long playerID, bool force = false)
         {
+            var ids = new HashSet<MyDefinitionId>();
+            bool NextGenBlock = false;
             try
             {
                 PlayerData playerData = players[playerID];
                 if (!force && playerData.LearnedBocks.Contains(blockId))
                 {
-                    return;
+                    if (settings.EnhancedProgression)
+                    {
+                        /* Get the Next Block Tech */
+                        BlockInformation BI = progress.GetNextBlock(blockId, playerData.LearnedBocks);
+                        if (BI != null)
+                        {
+                            blockId = BI.BlockId;
+                            NextGenBlock = true;
+                        }
+                        else{ return; }
+                    } else { return; }
                 }
 
-                var ids = new HashSet<MyDefinitionId>();
+                if(!settings.InstantLearn || NextGenBlock)
+                {
+                    double blockLuck = progress.getLuckValueByBlockId(blockId);
+                    double playerluck = playerData.Luck*10;
+                    double settingsdifficulty = settings.LearnDifficulty; //1 = 20
+                    //double RandomRoll = new Rnd(1,100).Next();
+                    double RandomRoll = 100;
+
+                    double roll = RandomRoll*settings.LearnDifficulty;
+                    double goal = (100*(blockLuck + 1)) - ((playerluck*10)+1);
+
+                    MyLog.Default.WriteLine($"Roll {roll} RandomRoll {RandomRoll} playerLuck {playerluck} Goal {goal}");
+
+                    if (goal >= roll)
+                    {
+                        MyLog.Default.WriteLine($"{playerID} Luck Failed: {roll}");
+                        playerData.Luck++;
+                        return;
+                    }
+                    playerData.Luck = 0;
+                    MyLog.Default.WriteLine($"{playerID} Luck Roll Won: {roll}");
+                }
+
                 ids.Add(blockId);
                 var cb = MyDefinitionManager.Static.GetCubeBlockDefinition(blockId);
                 if (!cb.Public)
                     return;
-                ulong steamId;
 
-                try
-                {
-                    if (!force && userIds.TryGetValue(playerID, out steamId))
-                    {
-                        var lockedBlock = new SerializableDefinitionId();
-                        if (settings.AlwaysLocked.TryGetValue(blockId, out lockedBlock))
-                        {
-                            MyLog.Default.WriteLine($"Learning Denied: {lockedBlock.ToString()}");
-                            SendUnlockNotification(blockId, false, steamId);
-                            return;
-                        }
-                        else
-                        {
-                            SendUnlockNotification(blockId, true, steamId);
-                        }
-                    }
-                }
-                catch (Exception e)
-                {
-                    MyLog.Default.WriteLine($"ERROR Sending Unlock notification: {e.StackTrace}");
-                    MyLog.Default.Flush();
-                }
+                /* Start unlocking Blocks */
                 var dg = MyDefinitionManager.Static.TryGetDefinitionGroup(cb.BlockPairName);
                 if (dg != null)
                 {
@@ -505,6 +512,7 @@ namespace Phoera.GringProgression
                 }
 
                 if (!cb.GuiVisible || (cb.BlockStages != null && cb.BlockStages.Length > 0))
+                {
                     foreach (var bid in ids.ToList())
                     {
                         HashSet<MyDefinitionId> blocks;
@@ -517,16 +525,54 @@ namespace Phoera.GringProgression
                                 }
                         }
                     }
-
+                }
+                if (false && settings.EnhancedProgression)
+                {
+                    //Remove all blocks that the player already has
+                    ids.UnionWith(progress.GetBlocksUnderBlockId(blockId));
+                    //ids = new HashSet<MyDefinitionId>(ids.Except(playerData.LearnedBocks).ToList());
+                }
                 foreach (var id in ids)
                 {
                     playerData.LearnedBocks.Add(id);
                     MyVisualScriptLogicProvider.PlayerResearchUnlock(playerID, id);
                 }
-
+                /* Send Message to Player */
+                ulong steamId;
+                try
+                {
+                    if (!force && userIds.TryGetValue(playerID, out steamId))
+                    {
+                        var lockedBlock = new SerializableDefinitionId();
+                        if (settings.AlwaysLocked.TryGetValue(blockId, out lockedBlock))
+                        {
+                            MyLog.Default.WriteLine($"Learning Denied: {lockedBlock.ToString()}");
+                            SendUnlockNotification(blockId, "Red", $"{MyDefinitionManager.Static.GetCubeBlockDefinition(blockId).DisplayNameText} technology is out of your reach.", steamId);
+                            return;
+                        }
+                        else
+                        {
+                            if (progress.GetNextBlock(blockId, playerData.LearnedBocks) == null)
+                            {
+                                SendUnlockNotification(blockId, "Blue", $"You've mastered { progress.GetbyBlockId(blockId).Group }! You can now build {MyDefinitionManager.Static.GetCubeBlockDefinition(blockId).DisplayNameText}.", steamId);
+                            } else
+                            {
+                                SendUnlockNotification(blockId, "White", $"You can now build {MyDefinitionManager.Static.GetCubeBlockDefinition(blockId).DisplayNameText}.", steamId);
+                                //SendUnlockNotification(blockId, true, $"You can now build {MyDefinitionManager.Static.GetCubeBlockDefinition(blockId).DisplayNameText}. {progress.CurrentLearningCountByType(blockId, playerData.LearnedBocks)} out of {progress.GetBlockTechTreeCount(blockId)}", steamId);
+                            }
+                        }
+                    }
+                }
+                catch (Exception e)
+                {
+                    MyLog.Default.WriteLine($"ERROR Sending Unlock notification: {e.Message}");
+                    MyLog.Default.WriteLine($"ERROR Sending Unlock notification: {e.StackTrace}");
+                    MyLog.Default.Flush();
+                }
             }
             catch (Exception e)
             {
+                MyLog.Default.WriteLine($"ERROR: {e.Message}");
                 MyLog.Default.WriteLine($"ERROR: {e.StackTrace}");
                 MyLog.Default.Flush();
             }
@@ -549,6 +595,9 @@ namespace Phoera.GringProgression
 
     public class SettingsFile
     {
+        public bool EnhancedProgression { get; set; } = true;
+        public double LearnDifficulty { get; set; } = 0.5;
+        public bool InstantLearn { get; set; } = true;
         public bool AdminUnlockAll { get; set; } = false;
         public bool UseLearnFaction { get; set; } = false;
         public float LearnRadius { get; set; } = 5;
@@ -559,6 +608,9 @@ namespace Phoera.GringProgression
         public static explicit operator SettingsFile(Settings v)
         {
             SettingsFile copySettings = new SettingsFile();
+            copySettings.EnhancedProgression = v.EnhancedProgression;
+            copySettings.LearnDifficulty = v.LearnDifficulty;
+            copySettings.InstantLearn = v.InstantLearn;
             copySettings.AdminUnlockAll = v.AdminUnlockAll;
             copySettings.UseLearnFaction = v.UseLearnFaction;
             copySettings.UseLearnRadius = v.UseLearnRadius;
@@ -573,6 +625,9 @@ namespace Phoera.GringProgression
     {
         /* Default Settings */
         private bool _isDirty = false;
+        public bool EnhancedProgression { get; set; } = true;
+        public double LearnDifficulty { get; set; } = 0.5;
+        public bool InstantLearn { get; set; } = true;
         public bool AdminUnlockAll { get; set; } = false;
         public bool UseLearnFaction { get; set; } = false;
         public float LearnRadius { get; set; } = 5;
@@ -665,6 +720,9 @@ namespace Phoera.GringProgression
             {
                 SettingsFile cloneSettings = new SettingsFile();
 
+                cloneSettings.EnhancedProgression = this.EnhancedProgression;
+                cloneSettings.LearnDifficulty = this.LearnDifficulty;
+                cloneSettings.InstantLearn = this.InstantLearn;
                 cloneSettings.AdminUnlockAll = this.AdminUnlockAll;
                 cloneSettings.UseLearnFaction = this.UseLearnFaction;
                 cloneSettings.UseLearnRadius = this.UseLearnRadius;
@@ -687,6 +745,9 @@ namespace Phoera.GringProgression
         public static explicit operator Settings(SettingsFile v)
         {
             Settings copySettings = new Settings();
+            copySettings.EnhancedProgression = v.EnhancedProgression;
+            copySettings.LearnDifficulty = v.LearnDifficulty;
+            copySettings.InstantLearn = v.InstantLearn;
             copySettings.AdminUnlockAll = v.AdminUnlockAll;
             copySettings.UseLearnFaction = v.UseLearnFaction;
             copySettings.UseLearnRadius = v.UseLearnRadius;
@@ -698,6 +759,9 @@ namespace Phoera.GringProgression
 
         public void Load(SettingsFile v)
         {
+            this.EnhancedProgression = v.EnhancedProgression;
+            this.LearnDifficulty = v.LearnDifficulty;
+            this.InstantLearn = v.InstantLearn;
             this.AdminUnlockAll = v.AdminUnlockAll;
             this.UseLearnFaction = v.UseLearnFaction;
             this.UseLearnRadius = v.UseLearnRadius;
