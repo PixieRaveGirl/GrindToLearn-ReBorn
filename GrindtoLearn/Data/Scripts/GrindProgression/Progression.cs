@@ -25,15 +25,17 @@ namespace Phoera.GringProgression
         public double getLuckValueByBlockId(MyDefinitionId blockId)
         {
             String blockType = this.GetbyBlockId(blockId).Type;
-            double luck = 5.0;
+            double luck;
             LuckValues.TryGetValue(blockType, out luck);
+            if (luck <= 0) { luck = 1; }
             return luck;
         }
 
         public double getLuckValueByType(String Type)
         {
-            double luck = 5.0;
+            double luck;
             LuckValues.TryGetValue(Type, out luck);
+            if(luck<=0) { luck = 1; }
             return luck;
         }
 
@@ -47,8 +49,8 @@ namespace Phoera.GringProgression
 
         private void CalculateLuck()
         {
-            LuckValues.Add("Warhead", 2.0);
-            LuckValues.Add("CubeBlock", 0.5);
+            LuckValues.Add("Warhead", 1);
+            LuckValues.Add("CubeBlock", -2);
         }
 
         public BlockInformation GetNextBlock(MyDefinitionId blockId, HashSet<MyDefinitionId> alreadyKnownBlocks, bool forceNext = false)
@@ -60,12 +62,12 @@ namespace Phoera.GringProgression
             List<BlockInformation> blockList = new List<BlockInformation>();
             typeList.TryGetValue(CurrentBI.Type, out blockList);
 
-            bool Next = false;
+            /* Maybe make this a toggle in settings, This would go with Learning everything under the current value of this block */
+            bool Next = true;
             BlockInformation BI = new BlockInformation();
             BlockInformation Lowest = new BlockInformation();
             foreach (BlockInformation selectedBI in blockList)
             {
-
                 if (Next && CurrentBI.Group == selectedBI.Group && !alreadyKnownBlocks.Contains(selectedBI.BlockId) || Next && forceNext && !alreadyKnownBlocks.Contains(selectedBI.BlockId))
                 {
                     return selectedBI;

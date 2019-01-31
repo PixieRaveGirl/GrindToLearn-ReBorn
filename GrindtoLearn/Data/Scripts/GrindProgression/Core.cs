@@ -466,6 +466,8 @@ namespace Phoera.GringProgression
                         BlockInformation BI = progress.GetNextBlock(blockId, playerData.LearnedBocks);
                         if (BI != null)
                         {
+                            var cbtest = MyDefinitionManager.Static.GetCubeBlockDefinition(blockId);
+                            MyLog.Default.WriteLine($"{cbtest.DisplayNameText} is Generated? {cbtest.IsGeneratedBlock}");
                             blockId = BI.BlockId;
                             NextGenBlock = true;
                         }
@@ -476,24 +478,24 @@ namespace Phoera.GringProgression
                 if(!settings.InstantLearn || NextGenBlock)
                 {
                     double blockLuck = progress.getLuckValueByBlockId(blockId);
-                    double playerluck = playerData.Luck*10;
-                    double settingsdifficulty = settings.LearnDifficulty; //1 = 20
+                    double playerluck = playerData.Luck;
+                    //double settingsdifficulty = settings.LearnDifficulty; //1 = 20
                     //double RandomRoll = new Rnd(1,100).Next();
-                    double RandomRoll = 100;
+                    //double RandomRoll = 100;
+                    double goal = settings.LearnDifficulty+blockLuck;
+                    //double roll = RandomRoll*((playerluck*1.5));
+                    //double goal = (100*(blockLuck)) * (settings.LearnDifficulty * 10);
 
-                    double roll = RandomRoll*settings.LearnDifficulty;
-                    double goal = (100*(blockLuck + 1)) - ((playerluck*10)+1);
+                    //MyLog.Default.WriteLine($"Roll {roll} RandomRoll {RandomRoll} playerLuck {playerluck} Goal {goal}");
 
-                    MyLog.Default.WriteLine($"Roll {roll} RandomRoll {RandomRoll} playerLuck {playerluck} Goal {goal}");
-
-                    if (goal >= roll)
+                    if (goal >= playerluck)
                     {
-                        MyLog.Default.WriteLine($"{playerID} Luck Failed: {roll}");
+                        //MyLog.Default.WriteLine($"{playerID} Luck Failed: {roll}");
                         playerData.Luck++;
                         return;
                     }
                     playerData.Luck = 0;
-                    MyLog.Default.WriteLine($"{playerID} Luck Roll Won: {roll}");
+                    //MyLog.Default.WriteLine($"{playerID} Luck Roll Won: {roll}");
                 }
 
                 ids.Add(blockId);
@@ -554,7 +556,7 @@ namespace Phoera.GringProgression
                         {
                             if (progress.GetNextBlock(blockId, playerData.LearnedBocks) == null)
                             {
-                                SendUnlockNotification(blockId, "Blue", $"You've mastered { progress.GetbyBlockId(blockId).Group }! You can now build {MyDefinitionManager.Static.GetCubeBlockDefinition(blockId).DisplayNameText}.", steamId);
+                                SendUnlockNotification(blockId, "Blue", $"You've mastered { progress.GetbyBlockId(blockId).Type }! You can now build {MyDefinitionManager.Static.GetCubeBlockDefinition(blockId).DisplayNameText}.", steamId);
                             } else
                             {
                                 SendUnlockNotification(blockId, "White", $"You can now build {MyDefinitionManager.Static.GetCubeBlockDefinition(blockId).DisplayNameText}.", steamId);
