@@ -249,80 +249,102 @@ namespace Phoera.GringProgression
         {
             if (damage.Type == MyDamageType.Grind)
             {
+                MyDefinitionId blockId = new MyDefinitionId();
+                MyRelationsBetweenPlayerAndBlock relation = new MyRelationsBetweenPlayerAndBlock();
+                string faction = "none";
+                IMyFaction plFaction;
+                List<long> owners = new List<long>();
+                long ownerID = -1;
+
+                IMyEntity ent;
+                
+                MyAPIGateway.Entities.TryGetEntityById(damage.AttackerId, out ent);
+                var hand = ent as IMyHandheldGunObject<MyToolBase>;
+                IMyPlayer pl;
+                if (hand != null && hand.DefinitionId.TypeId == typeof(MyObjectBuilder_AngleGrinder))
+                {
+                    var players = new List<IMyPlayer>();
+                    MyAPIGateway.Players.GetPlayers(players);
+                    pl = players.FirstOrDefault(p => p.IdentityId.Equals(hand.OwnerIdentityId));
+                    plFaction = MyAPIGateway.Session.Factions.TryGetPlayerFaction(pl.IdentityId);
+                }
+                else
+                {
+                    //If nothing was returned from Entity
+                    return;
+                }
 
                 if (target is IMySlimBlock)
                 {
-                    var slim = target as IMySlimBlock;
-                    CalculatePlayers(slim.BlockDefinition.Id, slim.CubeGrid.GridIntegerToWorld(slim.Position), damage.AttackerId);
+                    IMySlimBlock slim = target as IMySlimBlock;
+                    blockId = slim.BlockDefinition.Id;
+                    relation = slim.FatBlock.GetUserRelationToOwner(pl.IdentityId);
+                    faction = slim.FatBlock.GetOwnerFactionTag();
+                    owners = slim.CubeGrid.SmallOwners;
+                    ownerID = slim.OwnerId;
+                    
                 }
                 else if (target is IMyCubeBlock) //just in cause
                 {
                     var fat = target as IMyCubeBlock;
-                    CalculatePlayers(fat.BlockDefinition, fat.GetPosition(), damage.AttackerId);
+                    blockId = fat.BlockDefinition;
+                    relation = fat.GetUserRelationToOwner(pl.IdentityId);
+                    faction = fat.GetOwnerFactionTag();
+                    owners = fat.CubeGrid.SmallOwners;
+                    ownerID = fat.OwnerId;//fat.OwnerBlock.BuiltBy;
+
+
+
+                }
+                MyLog.Default.WriteLine($"OwnerID {ownerID} Owner {relation.ToString()} - Player {pl.IdentityId} Faction {faction} - Player Faction {plFaction.Tag} Built By {owners.Count}");
+                if (owners.Count > 0 && faction != plFaction.Tag && !owners.Contains(pl.IdentityId))
+                {
+                    CalculatePlayers(blockId, ent, pl);
                 }
             }
         }
 
-        void CalculatePlayers(MyDefinitionId blockId, Vector3D pos, long attackerId)
+        void CalculatePlayers(MyDefinitionId blockId, IMyEntity ent, IMyPlayer pl)
         {
-            IMyEntity ent;
+
+
             if (settings.UseLearnFaction)
             {
-                if (MyAPIGateway.Entities.TryGetEntityById(attackerId, out ent))
+                var players = new List<IMyPlayer>();
+                MyAPIGateway.Players.GetPlayers(players);
+
+                var faction = MyAPIGateway.Session.Factions.TryGetPlayerFaction(pl.IdentityId);
+                if (faction != null)
                 {
-                    var hand = ent as IMyHandheldGunObject<MyToolBase>;
-                    if (hand != null && hand.DefinitionId.TypeId == typeof(MyObjectBuilder_AngleGrinder))
+                    foreach (var player in players)
                     {
-                        var players = new List<IMyPlayer>();
-                        MyAPIGateway.Players.GetPlayers(players);
-                        var pl = players.FirstOrDefault(p => p.IdentityId.Equals(hand.OwnerIdentityId));
-                        var faction = MyAPIGateway.Session.Factions.TryGetPlayerFaction(pl.PlayerID);
-                        if (faction != null)
+                        var f = MyAPIGateway.Session.Factions.TryGetPlayerFaction(player.IdentityId);
+                        if (f != null && f.FactionId == faction.FactionId)
                         {
-                            foreach (var player in players)
-                            {
-                                var f = MyAPIGateway.Session.Factions.TryGetPlayerFaction(player.PlayerID);
-                                if (f != null && f.FactionId == faction.FactionId)
-                                {
-                                    UnlockById(blockId, player.PlayerID);
-                                }
-                            }
+                            UnlockById(blockId, player.IdentityId);
                         }
                     }
                 }
             }
             else if (settings.UseLearnRadius && settings.LearnRadius > 0)
             {
-                if (MyAPIGateway.Entities.TryGetEntityById(attackerId, out ent))
+
+                var sphere = new BoundingSphereD(ent.GetPosition(), settings.LearnRadius);
+                var players = new List<IMyPlayer>();
+                MyAPIGateway.Players.GetPlayers(players, p =>
                 {
-                    var hand = ent as IMyHandheldGunObject<MyToolBase>;
-                    if (hand != null && hand.DefinitionId.TypeId == typeof(MyObjectBuilder_AngleGrinder))
-                    {
-                        var sphere = new BoundingSphereD(ent.GetPosition(), settings.LearnRadius);
-                        var players = new List<IMyPlayer>();
-                        MyAPIGateway.Players.GetPlayers(players, p =>
-                        {
-                            return sphere.Contains(p.GetPosition()) != ContainmentType.Disjoint;
-                        });
-                        foreach (var player in players)
-                        {
-                            UnlockById(blockId, player.PlayerID);
-                        }
-                    }
+                    return sphere.Contains(p.GetPosition()) != ContainmentType.Disjoint;
+                });
+                foreach (var player in players)
+                {
+                    UnlockById(blockId, player.IdentityId);
                 }
             }
-            if (MyAPIGateway.Entities.TryGetEntityById(attackerId, out ent))
+            else
             {
-                var hand = ent as IMyHandheldGunObject<MyToolBase>;
-                if (hand != null && hand.DefinitionId.TypeId == typeof(MyObjectBuilder_AngleGrinder))
+                if (pl != null)
                 {
-                    var players = new List<IMyPlayer>();
-                    MyAPIGateway.Players.GetPlayers(players);
-                    var pl = players.FirstOrDefault(p => p.IdentityId.Equals(hand.OwnerIdentityId));
-                    if (pl != null)
-                    {
-                        UnlockById(blockId, pl.PlayerID);
-                    }
+                    UnlockById(blockId, pl.IdentityId);
                 }
             }
         }
@@ -454,6 +476,7 @@ namespace Phoera.GringProgression
         void UnlockById(MyDefinitionId blockId, long playerID, bool force = false)
         {
             var ids = new HashSet<MyDefinitionId>();
+            ulong steamId;
             bool NextGenBlock = false;
             try
             {
@@ -477,24 +500,28 @@ namespace Phoera.GringProgression
 
                 if(!settings.InstantLearn || NextGenBlock)
                 {
-                    double blockLuck = progress.getLuckValueByBlockId(blockId);
+                    //double blockLuck = progress.getLuckValueByBlockId(blockId);
                     double playerluck = playerData.Luck;
                     //double settingsdifficulty = settings.LearnDifficulty; //1 = 20
                     //double RandomRoll = new Rnd(1,100).Next();
                     //double RandomRoll = 100;
-                    double goal = settings.LearnDifficulty+blockLuck;
+                    double goal = settings.LearnDifficulty;
                     //double roll = RandomRoll*((playerluck*1.5));
                     //double goal = (100*(blockLuck)) * (settings.LearnDifficulty * 10);
 
                     //MyLog.Default.WriteLine($"Roll {roll} RandomRoll {RandomRoll} playerLuck {playerluck} Goal {goal}");
 
-                    if (goal >= playerluck)
+                    if (goal > playerluck)
                     {
                         //MyLog.Default.WriteLine($"{playerID} Luck Failed: {roll}");
+                        if (userIds.TryGetValue(playerID, out steamId))
+                        {
+                            SendUnlockNotification(blockId, "White", $"Your Knowledge on { progress.GetbyBlockId(blockId).Type }s has increased. {playerluck} of {goal}", steamId);
+                        }
                         playerData.Luck++;
                         return;
                     }
-                    playerData.Luck = 0;
+                    playerData.Luck = 1;
                     //MyLog.Default.WriteLine($"{playerID} Luck Roll Won: {roll}");
                 }
 
@@ -502,7 +529,7 @@ namespace Phoera.GringProgression
                 var cb = MyDefinitionManager.Static.GetCubeBlockDefinition(blockId);
                 if (!cb.Public)
                     return;
-
+                
                 /* Start unlocking Blocks */
                 var dg = MyDefinitionManager.Static.TryGetDefinitionGroup(cb.BlockPairName);
                 if (dg != null)
@@ -540,7 +567,6 @@ namespace Phoera.GringProgression
                     MyVisualScriptLogicProvider.PlayerResearchUnlock(playerID, id);
                 }
                 /* Send Message to Player */
-                ulong steamId;
                 try
                 {
                     if (!force && userIds.TryGetValue(playerID, out steamId))
@@ -556,7 +582,7 @@ namespace Phoera.GringProgression
                         {
                             if (progress.GetNextBlock(blockId, playerData.LearnedBocks) == null)
                             {
-                                SendUnlockNotification(blockId, "Blue", $"You've mastered { progress.GetbyBlockId(blockId).Type }! You can now build {MyDefinitionManager.Static.GetCubeBlockDefinition(blockId).DisplayNameText}.", steamId);
+                                SendUnlockNotification(blockId, "Blue", $"You can now build {MyDefinitionManager.Static.GetCubeBlockDefinition(blockId).DisplayNameText}. You've mastered { progress.GetbyBlockId(blockId).Type }!", steamId);
                             } else
                             {
                                 SendUnlockNotification(blockId, "White", $"You can now build {MyDefinitionManager.Static.GetCubeBlockDefinition(blockId).DisplayNameText}.", steamId);
@@ -598,7 +624,7 @@ namespace Phoera.GringProgression
     public class SettingsFile
     {
         public bool EnhancedProgression { get; set; } = true;
-        public double LearnDifficulty { get; set; } = 0.5;
+        public double LearnDifficulty { get; set; } = 3;
         public bool InstantLearn { get; set; } = true;
         public bool AdminUnlockAll { get; set; } = false;
         public bool UseLearnFaction { get; set; } = false;
@@ -628,7 +654,7 @@ namespace Phoera.GringProgression
         /* Default Settings */
         private bool _isDirty = false;
         public bool EnhancedProgression { get; set; } = true;
-        public double LearnDifficulty { get; set; } = 0.5;
+        public double LearnDifficulty { get; set; } = 3;
         public bool InstantLearn { get; set; } = true;
         public bool AdminUnlockAll { get; set; } = false;
         public bool UseLearnFaction { get; set; } = false;

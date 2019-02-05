@@ -24,25 +24,25 @@ namespace Phoera.GringProgression
     public class PlayerFile
     {
         public HashSet<SerializableDefinitionId> LearnedBocks = new HashSet<SerializableDefinitionId>();
-        public int Luck { get; set; } = 0;
+        public int Luck { get; set; } = 1;
     }
 
     public class PlayerData
     {
         public HashSet<MyDefinitionId> LearnedBocks = new HashSet<MyDefinitionId>();
-        public int Luck { get; set; } = 0;
+        public int Luck { get; set; } = 1;
 
         public PlayerData()
         {
             LearnedBocks = new HashSet<MyDefinitionId>();
-            Luck = 0;
+            Luck = 1;
         }
         public PlayerData(HashSet<MyDefinitionId> _LearnedBocks)
         {
             this.LearnedBocks = _LearnedBocks;
-            this.Luck = 0;
+            this.Luck = 1;
         }
-        public PlayerData(HashSet<MyDefinitionId> _LearnedBocks, int _Luck = 0)
+        public PlayerData(HashSet<MyDefinitionId> _LearnedBocks, int _Luck = 1)
         {
             this.LearnedBocks = _LearnedBocks;
             this.Luck = _Luck;
